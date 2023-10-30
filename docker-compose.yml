@@ -1,0 +1,21 @@
+version: '3'
+
+services:
+  web:
+    build: .
+    restart: always
+    ports:
+      - "5000:5000"
+    depends_on:
+      - database
+    env_file:
+      - .env
+
+  database:
+    image: mongo
+    restart: always
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:

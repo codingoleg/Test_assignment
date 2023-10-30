@@ -2,13 +2,13 @@ import os
 import smtplib
 import socket
 from email.mime.text import MIMEText
+from email.utils import formataddr
 
 
 def send_email(message) -> tuple:
     msg = MIMEText(message)
     msg['Subject'] = 'Mail Subject'
-    msg['From'] = ''
-    msg.replace_header('From', os.environ['SMTP_NAME'])
+    msg['From'] = formataddr((os.environ['SMTP_NAME'], os.environ['SMTP_EMAIL']))
 
     try:
         with smtplib.SMTP(os.environ['SMTP_HOST'], int(os.environ['SMTP_PORT']), timeout=10) as server:

@@ -1,86 +1,20 @@
 import json
 import random
 import time
-from enum import Enum
-from functools import wraps
-from typing import Optional, Annotated
 
 from bson import ObjectId
-from bson.errors import InvalidId, BSONError
-from flask import Flask, request
-from pydantic import BaseModel, ValidationError, field_validator, Field
+from bson.errors import BSONError
+from flask import request, Blueprint
 
-import config
-from db.mongo import user_collection, notifications_collection
-from smtp.smtp import send_email
+from .db.mongo import notifications_collection
+from .models import NotificationCreate, NotificationList, NotificationRead
+from .smtp.smtp import send_email
+from .validators import validate_request
 
-app = Flask(__name__)
-app_client = app.test_client()
-
-
-class Keys(str, Enum):
-    registration = 'registration'
-    new_message = 'new_message'
-    new_post = 'new_post'
-    new_login = 'new_login'
+endpoints = Blueprint('endpoints', __name__)
 
 
-class BaseUserModel(BaseModel):
-    user_id: str
-
-
-class NotificationCreate(BaseUserModel):
-    key: Keys
-    target_id: Optional[str] = None
-    data: Optional[dict] = None
-
-    @field_validator('target_id')
-    def invalid_id(cls, target_id: str):
-        if ObjectId(target_id):
-            raise InvalidId(
-                f"'{target_id}' is not a valid ObjectId, it must be a 12-byte input or a 24-character hex string"
-            )
-        return target_id
-
-
-class NotificationList(BaseUserModel):
-    skip: Annotated[int, Field(ge=0, default=0)]
-    limit: Annotated[int, Field(gt=0, default=config.NOTIFICATION_LIMIT)]
-
-
-class NotificationRead(BaseUserModel):
-    notification_id: str
-
-
-def validate_request(model: BaseUserModel):
-    """Decorator for either body or args to validate, but neither both. Checks user existence."""
-
-    def decorator(f):
-        @wraps(f)
-        def wrapper():
-            try:
-                request_data = json.loads(request.data)
-            except json.decoder.JSONDecodeError:
-                request_data = dict(request.args.items())
-                if not request_data:
-                    return {"error": f"args or body were not found"}, 400
-
-            try:
-                data = model.model_validate(request_data)
-            except ValidationError as error:
-                return error.json(), 400
-
-            if not user_collection.find_one({'_id': ObjectId(data.user_id)}):
-                return {"error": f"'user_id': '{data.user_id}' was not found"}, 400
-
-            return f()
-
-        return wrapper
-
-    return decorator
-
-
-@app.route('/create', methods=['POST'])
+@endpoints.route('/create', methods=['POST'])
 @validate_request(NotificationCreate)
 def create() -> tuple[dict, int]:
     """
@@ -123,7 +57,7 @@ def create() -> tuple[dict, int]:
     return response, status_code
 
 
-@app.route('/list')
+@endpoints.route('/list')
 @validate_request(NotificationList)
 def get_list() -> dict:
     """
@@ -158,7 +92,7 @@ def get_list() -> dict:
     }
 
 
-@app.route('/read', methods=['POST'])
+@endpoints.route('/read', methods=['POST'])
 @validate_request(NotificationRead)
 def read() -> tuple[dict, int]:
     """
@@ -173,7 +107,3 @@ def read() -> tuple[dict, int]:
     )
 
     return ({"success": True}, 200) if result.modified_count else ({"success": False}, 400)
-
-
-if __name__ == '__main__':
-    app.run(host=config.HOST, port=int(config.PORT), debug=True)
